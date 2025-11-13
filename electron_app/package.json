@@ -1,0 +1,33 @@
+{
+  "name": "molprop-electron",
+  "version": "0.1.0",
+  "description": "MolProp Electron App",
+  "author": "Satadru",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --win",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "26.2.0",
+    "electron-builder": "24.6.0"
+  },
+  "build": {
+    "appId": "com.example.molprop",
+    "files": [
+      "../react_frontend/dist/**",
+      "../models/**",
+      "../molecule_api_full.py"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "extraResources": [
+      "../models/**"
+    ]
+  }
+}

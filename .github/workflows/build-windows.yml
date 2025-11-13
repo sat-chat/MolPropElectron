@@ -1,0 +1,70 @@
+
+name: Build Electron EXE (Windows) - fixed CI
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up micromamba
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          micromamba-version: "latest"
+          init-shell: powershell
+
+      - name: Create env & install RDKit + tools (PowerShell)
+        shell: powershell
+        run: |
+          micromamba create -n molprop_build -y -c conda-forge python=3.10 rdkit pyinstaller joblib scikit-learn pandas requests pillow
+          micromamba activate molprop_build
+          python -c "import rdkit, sklearn; print('RDKit:', rdkit.__version__, 'Sklearn:', sklearn.__version__)"
+
+      - name: Build backend EXE (PyInstaller)
+        shell: powershell
+        run: |
+          micromamba activate molprop_build
+          if (!(Test-Path "molecule_api_full.py")) { Write-Error "molecule_api_full.py missing"; exit 1 }
+          if (!(Test-Path "models")) { Write-Error "models/ folder missing"; exit 1 }
+          pyinstaller --noconfirm --onefile --add-data "models;models" molecule_api_full.py
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Build React frontend
+        shell: powershell
+        working-directory: react_frontend
+        run: |
+          npm install
+          npm install -D vite
+          npx vite build
+
+      - name: Install Electron deps
+        shell: powershell
+        working-directory: electron_app
+        run: |
+          npm install
+          npm install --no-save electron@26.2.0
+          npm install --no-save electron-builder@24.6.0
+
+      - name: Build Electron app
+        shell: powershell
+        working-directory: electron_app
+        run: |
+          npx electron-builder --win --x64 --publish never
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: MolPropElectron
+          path: electron_app/dist/**

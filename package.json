@@ -1,0 +1,9 @@
+{
+  "name": "molprop-app",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "react_frontend",
+    "electron_app"
+  ]
+}
