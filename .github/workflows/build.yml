@@ -1,0 +1,75 @@
+﻿name: Build MolProp Electron (Windows) - backend + unpacked
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Install Python build deps
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller joblib scikit-learn
+
+      - name: Build backend EXE (PyInstaller)
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --onefile --add-data "models;models" molecule_api_full.py
+          Copy-Item -Path .\dist\molecule_api_full.exe -Destination .\molecule_api_full.exe -Force
+
+      - name: Setup Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install electron_app dependencies
+        working-directory: electron_app
+        shell: pwsh
+        run: |
+          npm install --unsafe-perm --no-audit --no-fund --progress=false
+
+      - name: Ensure app-builder binary
+        working-directory: electron_app
+        shell: pwsh
+        run: |
+          $binPath = "node_modules\\app-builder-bin\\win\\x64\\app-builder.exe"
+          if (!(Test-Path $binPath)) {
+            npm install app-builder-bin --no-save --unsafe-perm --no-audit --no-fund --progress=false
+          }
+
+      - name: Build unpacked Electron app (win-unpacked)
+        working-directory: electron_app
+        shell: pwsh
+        run: |
+          npx --prefix ./ electron-builder --win --x64 --dir --publish never 2>&1 | Tee-Object -FilePath electron-builder-dir.log
+
+      - name: Attempt full installer build (non-fatal)
+        working-directory: electron_app
+        shell: pwsh
+        run: |
+          npx --prefix ./ electron-builder --win --x64 --publish never 2>&1 | Tee-Object -FilePath electron-builder-full.log || Write-Host "Installer failed."
+
+      - name: Upload unpacked artifact and logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: MolProp-Windows-Unpacked
+          path: |
+            electron_app/dist/**
+            electron_app/electron-builder-dir.log
+            electron_app/electron-builder-full.log
