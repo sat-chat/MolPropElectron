@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "molprop-electron",
   "version": "0.1.0",
   "description": "MolProp Electron App",
@@ -13,34 +13,21 @@
     "electron": "26.2.0",
     "electron-builder": "24.6.0"
   },
-  
+  "build": {
+    "appId": "com.example.molprop",
+    "files": [
+      "../react_frontend/dist/**",
+      "../models/**",
+      "../molecule_api_full.py"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
     "extraResources": [
       "../models/**"
     ]
   }
-,
-"build": {
-  "appId": "com.genexis.molprop",
-  "productName": "MolPropElectron",
-  "files": [
-    "../react_frontend/dist/**",
-    "../molecule_api_full.exe",
-    "../models/**",
-    "**/*"
-  ],
-  "extraResources": [
-    "../models/**",
-    "../molecule_api_full.exe"
-  ],
-  "asar": true,
-  "win": {
-    "target": [
-      "portable"
-    ],
-    "artifactName": "${productName}-${version}-portable.${ext}"
-  },
-  "directories": {
-    "buildResources": "build"
-  }
-}
 }
