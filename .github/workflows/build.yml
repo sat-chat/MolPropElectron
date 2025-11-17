@@ -1,0 +1,147 @@
+﻿name: Build MolProp Electron (Windows) - backend + unpacked
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Install Python build deps
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller joblib scikit-learn
+
+      - name: Build backend EXE (PyInstaller)
+        shell: pwsh
+        run: |
+          Write-Host "Building backend exe with PyInstaller..."
+          if (!(Test-Path "molecule_api_full.py")) {
+            Write-Error "molecule_api_full.py not found in repo root; ensure it exists"
+            exit 1
+          }
+          pyinstaller --noconfirm --onefile --add-data "models;models" molecule_api_full.py
+          if (!(Test-Path ".\\dist\\molecule_api_full.exe")) {
+            Write-Error "PyInstaller did not produce dist\\molecule_api_full.exe"
+            dir .\dist\ | Format-Table -AutoSize
+            exit 1
+          }
+          Copy-Item -Path .\dist\molecule_api_full.exe -Destination .\molecule_api_full.exe -Force
+          Write-Host "Backend exe produced and copied to repo root as molecule_api_full.exe"
+          dir .\molecule_api_full.exe
+
+      - name: Setup Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Show node / npm versions
+        run: |
+          node -v
+          npm -v
+
+      - name: Install electron_app dependencies
+        working-directory: electron_app
+        shell: pwsh
+        env:
+          CI: "true"
+        run: |
+          Write-Host "Running npm install --unsafe-perm inside electron_app..."
+          npm install --unsafe-perm --no-audit --no-fund --progress=false
+          Write-Host "npm install finished. Top-level node_modules (first 80):"
+          if (Test-Path "node_modules") {
+            Get-ChildItem -Path node_modules -Force | Select-Object -First 80 | Format-Table -AutoSize
+          } else {
+            Write-Host "node_modules folder not present after npm install."
+          }
+
+      - name: Ensure app-builder binary (install if missing)
+        working-directory: electron_app
+        shell: pwsh
+        run: |
+          $binPath = "node_modules\\app-builder-bin\\win\\x64\\app-builder.exe"
+          Write-Host "Checking for app-builder binary at: $binPath"
+          if (Test-Path $binPath) {
+            Write-Host "app-builder.exe FOUND"
+          } else {
+            Write-Host "app-builder.exe missing. Attempting targeted install of app-builder-bin..."
+            try {
+              npm install app-builder-bin --no-save --unsafe-perm --no-audit --no-fund --progress=false
+            } catch {
+              Write-Host "Targeted install failed (non-fatal). Continuing to diagnostics."
+            }
+            if (Test-Path $binPath) {
+              Write-Host "app-builder.exe present after targeted install."
+            } else {
+              Write-Host "app-builder.exe STILL missing. Collecting diagnostics and aborting."
+              Write-Host "--- npm list --depth=0 ---"
+              npm ls --depth=0 || Write-Host "npm ls returned non-zero"
+              if (Test-Path "node_modules\\app-builder-bin") {
+                Write-Host "--- node_modules\\app-builder-bin contents (first 200) ---"
+                Get-ChildItem -Path "node_modules\\app-builder-bin" -Recurse -Force | Select-Object -First 200 | Format-Table -AutoSize
+              } else {
+                Write-Host "node_modules\\app-builder-bin not present"
+              }
+              if (Test-Path "npm-debug.log") {
+                Write-Host "--- npm-debug.log ---"
+                Get-Content "npm-debug.log" -Raw
+              } else {
+                Write-Host "No npm-debug.log present"
+              }
+              throw "app-builder.exe missing - aborting for diagnostics"
+            }
+          }
+
+      - name: Build unpacked Electron app (win-unpacked) and capture log
+        working-directory: electron_app
+        shell: pwsh
+        run: |
+          Write-Host "Building unpacked app (--dir) and saving log to electron-builder-dir.log..."
+          npx electron-builder --win --x64 --dir --publish never 2>&1 | Tee-Object -FilePath electron-builder-dir.log
+          if (Test-Path "dist") {
+            Write-Host "Dist folder created. Listing contents (first 300):"
+            Get-ChildItem -Path dist -Recurse | Select-Object -First 300 | Format-Table -AutoSize
+          } else {
+            Write-Host "No dist folder created by electron-builder."
+          }
+
+      - name: Attempt full installer build (non-fatal) and capture log
+        if: ${{ success() }}
+        working-directory: electron_app
+        shell: pwsh
+        run: |
+          Write-Host "Attempting full installer build (may fail on some runners). Log -> electron-builder-full.log"
+          npx electron-builder --win --x64 --publish never 2>&1 | Tee-Object -FilePath electron-builder-full.log || Write-Host "Full installer build failed (non-fatal). See electron-builder-full.log"
+
+      - name: Upload unpacked artifact and logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: MolProp-Windows-Unpacked
+          path: |
+            electron_app/dist/**
+            electron_app/electron-builder-dir.log
+            electron_app/electron-builder-full.log
+            electron_app/npm-debug.log
+
+      - name: Upload node_modules snapshot for debugging (only on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: node-modules-snapshot
+          path: |
+            electron_app/node_modules/**
